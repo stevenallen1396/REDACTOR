@@ -69,6 +69,27 @@ def _normalize_for_match(text: str) -> str:
     return text.strip().lower()
 
 
+def _expand_exemptions(exemptions: list[str]) -> set[str]:
+    """A multi-word exemption ("Simon Carter") also exempts each individual word
+    ("Simon", "Carter") wherever it's detected on its own, anywhere in the document -
+    not just when the full name appears together. This also closes a redaction leak:
+    without it, a bare first name detected elsewhere (unexempted on its own) would get
+    redacted document-wide, which could strike through the same word inside an
+    otherwise-exempted full name elsewhere on the page."""
+    expanded = set()
+    for term in exemptions:
+        term = term.strip()
+        if not term:
+            continue
+        expanded.add(_normalize_for_match(term))
+        words = term.split()
+        if len(words) > 1:
+            for word in words:
+                if len(word.strip()) >= 2:
+                    expanded.add(_normalize_for_match(word))
+    return expanded
+
+
 def redact_pdf_bytes(
     pdf_bytes: bytes,
     exemptions: list[str],
@@ -80,7 +101,7 @@ def redact_pdf_bytes(
     automatic detection keeps missing, say) where you'd rather guarantee removal than
     rely on the model. Exemptions win if a term appears in both lists."""
     analyzer = get_analyzer()
-    exempt_normalized = {_normalize_for_match(e) for e in exemptions if e.strip()}
+    exempt_normalized = _expand_exemptions(exemptions)
     must_redact = [
         m.strip()
         for m in (must_redact or [])

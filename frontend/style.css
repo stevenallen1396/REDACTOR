@@ -1,24 +1,28 @@
 :root {
   color-scheme: light dark;
-  --bg: #f7f7f8;
+  --future-blue: #08a4de;
+  --future-blue-hover: #0790c4;
+  --deep-roots-blue: #0a436a;
+
+  --bg: #ffffff;
   --panel-bg: #ffffff;
-  --border: #d8d8dc;
-  --text: #1c1c1e;
-  --muted: #6b6b70;
-  --accent: #2f5fd6;
-  --accent-hover: #2450b8;
+  --border: #d8e3ea;
+  --text: #0a436a;
+  --muted: #4d6b80;
+  --accent: #08a4de;
+  --accent-hover: #0790c4;
   --danger: #b3261e;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #16161a;
-    --panel-bg: #1f1f24;
-    --border: #35353c;
-    --text: #ececed;
-    --muted: #a0a0a6;
-    --accent: #5b83e8;
-    --accent-hover: #7396ee;
+    --bg: #0a436a;
+    --panel-bg: #0d4f7d;
+    --border: #1a5c85;
+    --text: #ffffff;
+    --muted: #bcd6e6;
+    --accent: #08a4de;
+    --accent-hover: #2bb8ec;
   }
 }
 
@@ -26,9 +30,14 @@
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-family: "Aptos", "Aptos Body", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
   background: var(--bg);
   color: var(--text);
+}
+
+h1, h2, .link-btn, button {
+  font-family: "Myriad Pro", "Myriad Pro Bold", "Aptos Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-weight: 700;
 }
 
 header {
@@ -36,8 +45,19 @@ header {
   text-align: center;
 }
 
-h1 { margin: 0 0 0.25rem; font-size: 1.8rem; }
-.subtitle { margin: 0; color: var(--muted); }
+.logo {
+  max-width: 220px;
+  width: 40%;
+  height: auto;
+  margin: 0 auto 1rem;
+  display: block;
+}
+
+h1 { margin: 0 0 0.25rem; font-size: 1.8rem; color: var(--deep-roots-blue); }
+@media (prefers-color-scheme: dark) {
+  h1 { color: #ffffff; }
+}
+.subtitle { margin: 0; color: var(--muted); font-family: "Aptos", "Aptos Body", -apple-system, sans-serif; font-weight: 400; }
 
 main {
   max-width: 720px;
@@ -81,16 +101,25 @@ main {
 }
 
 .link-btn {
+  appearance: none;
+  -webkit-appearance: none;
   background: none;
   border: none;
-  padding: 0;
+  padding: 0.15em 0.05em;
+  margin: 0;
   color: var(--accent);
   text-decoration: underline;
   cursor: pointer;
   font-size: inherit;
+  line-height: inherit;
 }
 
-.link-btn:hover { color: var(--accent-hover); }
+.link-btn:hover,
+.link-btn:focus,
+.link-btn:active {
+  background: none;
+  color: var(--accent-hover);
+}
 
 .file-list {
   list-style: none;
@@ -112,12 +141,16 @@ main {
 .file-list li:last-child { border-bottom: none; }
 
 .file-list .remove {
+  appearance: none;
+  -webkit-appearance: none;
   cursor: pointer;
   color: var(--danger);
   font-size: 0.85rem;
   background: none;
   border: none;
 }
+
+.file-list .remove:hover { background: none; }
 
 label {
   display: block;
@@ -134,7 +167,7 @@ textarea {
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
-  font-family: inherit;
+  font-family: "Aptos", "Aptos Body", inherit;
   font-size: 0.9rem;
   resize: vertical;
 }
@@ -147,6 +180,8 @@ textarea {
 }
 
 button {
+  appearance: none;
+  -webkit-appearance: none;
   padding: 0.55rem 1.1rem;
   border-radius: 8px;
   border: 1px solid var(--accent);
@@ -163,7 +198,7 @@ button:disabled {
   cursor: not-allowed;
 }
 
-#clear-btn, #send-to-redact-btn {
+#clear-btn {
   background: transparent;
   color: var(--text);
   border-color: var(--border);

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The REDACTOR</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>The REDACTOR</h1>
+  <p class="subtitle">Local, offline PDF redaction &amp; email-to-PDF conversion. Nothing leaves this machine.</p>
+</header>
+
+<main>
+  <section class="panel" id="batch-panel">
+    <h2>Upload documents</h2>
+    <p class="hint">Drop a batch of PDFs, .eml / .msg emails, or a whole folder mixing both. Emails are converted to PDF automatically, then everything is scanned for personal information (names, emails, phone numbers, addresses, UK postcodes/NI numbers, etc.) and permanently redacted.</p>
+    <div class="dropzone" id="batch-dropzone">
+      <p>Drag &amp; drop files <strong>or a folder</strong> here</p>
+      <p class="dropzone-links">
+        <button type="button" class="link-btn" id="batch-browse-files">choose files</button>
+        &nbsp;or&nbsp;
+        <button type="button" class="link-btn" id="batch-browse-folder">choose a folder</button>
+      </p>
+      <input type="file" id="batch-input" accept=".pdf,.eml,.msg" multiple hidden>
+      <input type="file" id="batch-folder-input" webkitdirectory multiple hidden>
+    </div>
+    <ul class="file-list" id="batch-file-list"></ul>
+
+    <label for="exemptions">Exemptions <span class="hint-inline">(terms that should NOT be redacted — one per line, e.g. staff names, your company name)</span></label>
+    <textarea id="exemptions" rows="4" placeholder="Steven Allen&#10;IML&#10;info@iml.co.uk"></textarea>
+
+    <div class="actions">
+      <button id="process-btn" disabled>Redact &amp; download ZIP</button>
+      <button id="clear-btn">Clear batch</button>
+    </div>
+    <div class="status" id="batch-status"></div>
+  </section>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

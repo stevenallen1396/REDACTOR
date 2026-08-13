@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+python-multipart
+pymupdf
+presidio-analyzer
+presidio-anonymizer
+spacy
+extract-msg
+weasyprint

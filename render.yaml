@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: the-redactor
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /
+    envVars:
+      - key: REDACTOR_USERS
+        sync: false

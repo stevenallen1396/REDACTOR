@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import os
+import re
 from typing import Optional
 
 import fitz  # pymupdf
@@ -49,6 +50,25 @@ def parse_exemptions(raw: str) -> list[str]:
     return [line.strip() for line in raw.splitlines() if line.strip()]
 
 
+# Presidio's own allow_list does an *exact* match against whatever span the NER model
+# picked, which is fragile: the model often includes a trailing possessive or gets
+# nudged by adjacent punctuation ("Simon Carter's", "Simon Carter,"), so an exemption
+# for "Simon Carter" silently fails to match and the name gets redacted anyway. We
+# don't pass allow_list to Presidio at all - instead we normalise both sides (strip
+# trailing punctuation and 's/'s) before comparing, so small span differences like
+# that don't break the exemption.
+_TRAILING_PUNCT = re.compile(r"[\s,.;:!?\"'’)\]]+$")
+_TRAILING_POSSESSIVE = re.compile(r"(?:'s|’s)$", re.IGNORECASE)
+
+
+def _normalize_for_match(text: str) -> str:
+    text = text.strip()
+    text = _TRAILING_PUNCT.sub("", text)
+    text = _TRAILING_POSSESSIVE.sub("", text)
+    text = _TRAILING_PUNCT.sub("", text)
+    return text.strip().lower()
+
+
 def redact_pdf_bytes(
     pdf_bytes: bytes,
     exemptions: list[str],
@@ -60,9 +80,11 @@ def redact_pdf_bytes(
     automatic detection keeps missing, say) where you'd rather guarantee removal than
     rely on the model. Exemptions win if a term appears in both lists."""
     analyzer = get_analyzer()
-    exempt_lower = {e.strip().lower() for e in exemptions}
+    exempt_normalized = {_normalize_for_match(e) for e in exemptions if e.strip()}
     must_redact = [
-        m.strip() for m in (must_redact or []) if m.strip() and m.strip().lower() not in exempt_lower
+        m.strip()
+        for m in (must_redact or [])
+        if m.strip() and _normalize_for_match(m) not in exempt_normalized
     ]
 
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
@@ -82,17 +104,14 @@ def redact_pdf_bytes(
         for line in page_text.split("\n"):
             if not line.strip():
                 continue
-            results = analyzer.analyze(
-                text=line,
-                language="en",
-                allow_list=exemptions or None,
-            )
+            results = analyzer.analyze(text=line, language="en")
             for result in results:
                 if result.entity_type in EXCLUDED_ENTITIES or result.score < SCORE_THRESHOLD:
                     continue
                 snippet = line[result.start : result.end].strip()
-                if snippet:
-                    rects.extend(page.search_for(snippet))
+                if not snippet or _normalize_for_match(snippet) in exempt_normalized:
+                    continue
+                rects.extend(page.search_for(snippet))
 
         for term in must_redact:
             rects.extend(page.search_for(term))

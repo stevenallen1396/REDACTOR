@@ -91,10 +91,39 @@ JOB_TITLE_RECOGNIZER = PatternRecognizer(
     ],
 )
 
+# General-purpose NER is surprisingly unreliable for street addresses specifically -
+# testing turned up cases like "10 Downing Street" getting no entity at all, and other
+# street names inconsistently mislabelled as PERSON or ORGANIZATION (redacted anyway,
+# but only by accident). UK street addresses follow a predictable shape - a house
+# number followed by a name ending in a street-type word - so a direct pattern is far
+# more reliable here than hoping the statistical model generalises correctly.
+_STREET_SUFFIXES = (
+    "Street|Road|Avenue|Lane|Drive|Close|Way|Court|Place|Gardens|Crescent|Grove|"
+    "Terrace|Square|Hill|Park|Green|Row|Walk|Mews|Boulevard|Circus|Wharf|Quay|Rise|"
+    "View|Fields|Common|Chase|Meadow|Croft"
+)
+UK_ADDRESS_RECOGNIZER = PatternRecognizer(
+    supported_entity="UK_ADDRESS",
+    name="UkAddressRecognizer",
+    patterns=[
+        Pattern(
+            name="uk_street_address",
+            regex=(
+                r"\b(?:(?:Flat|Unit|Apartment)\s+\d+[A-Za-z]?,?\s+)?"
+                r"\d{1,4}[A-Za-z]?\s+(?:[A-Z][a-zA-Z'\-]*\s+){1,4}(?:"
+                + _STREET_SUFFIXES
+                + r")\b"
+            ),
+            score=0.75,
+        )
+    ],
+)
+
 CUSTOM_RECOGNIZERS = [
     UK_POSTCODE_RECOGNIZER,
     UK_NINO_RECOGNIZER,
     UK_PHONE_RECOGNIZER,
     HONORIFIC_NAME_RECOGNIZER,
     JOB_TITLE_RECOGNIZER,
+    UK_ADDRESS_RECOGNIZER,
 ]

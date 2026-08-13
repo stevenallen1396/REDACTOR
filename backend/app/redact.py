@@ -59,6 +59,7 @@ def parse_exemptions(raw: str) -> list[str]:
 # that don't break the exemption.
 _TRAILING_PUNCT = re.compile(r"[\s,.;:!?\"'’)\]]+$")
 _TRAILING_POSSESSIVE = re.compile(r"(?:'s|’s)$", re.IGNORECASE)
+_WHITESPACE = re.compile(r"\s+")
 
 
 def _normalize_for_match(text: str) -> str:
@@ -66,28 +67,41 @@ def _normalize_for_match(text: str) -> str:
     text = _TRAILING_PUNCT.sub("", text)
     text = _TRAILING_POSSESSIVE.sub("", text)
     text = _TRAILING_PUNCT.sub("", text)
+    text = _WHITESPACE.sub(" ", text)  # collapses double spaces, non-breaking spaces, etc.
     return text.strip().lower()
 
 
-def _expand_exemptions(exemptions: list[str]) -> set[str]:
+def _build_exemption_pattern(exemptions: list[str]) -> "re.Pattern[str] | None":
     """A multi-word exemption ("Simon Carter") also exempts each individual word
-    ("Simon", "Carter") wherever it's detected on its own, anywhere in the document -
-    not just when the full name appears together. This also closes a redaction leak:
-    without it, a bare first name detected elsewhere (unexempted on its own) would get
-    redacted document-wide, which could strike through the same word inside an
-    otherwise-exempted full name elsewhere on the page."""
-    expanded = set()
+    ("Simon", "Carter") on its own anywhere, AND matches when the detected span is a
+    superset of the exempted name - a title or suffix attached to it ("Mr Simon
+    Carter", "Simon Carter Ltd") - since the model doesn't reliably isolate just the
+    name in those cases. Built as a single word-boundaried regex alternation rather
+    than a set, since supersets need substring search, not equality."""
+    terms: set[str] = set()
     for term in exemptions:
         term = term.strip()
         if not term:
             continue
-        expanded.add(_normalize_for_match(term))
+        norm = _normalize_for_match(term)
+        if norm:
+            terms.add(norm)
         words = term.split()
         if len(words) > 1:
             for word in words:
-                if len(word.strip()) >= 2:
-                    expanded.add(_normalize_for_match(word))
-    return expanded
+                w = _normalize_for_match(word)
+                if len(w) >= 2:
+                    terms.add(w)
+    if not terms:
+        return None
+    alternation = "|".join(re.escape(t) for t in sorted(terms, key=len, reverse=True))
+    return re.compile(r"\b(?:" + alternation + r")\b")
+
+
+def _is_exempt(snippet: str, pattern: "re.Pattern[str] | None") -> bool:
+    if pattern is None:
+        return False
+    return bool(pattern.search(_normalize_for_match(snippet)))
 
 
 def redact_pdf_bytes(
@@ -101,11 +115,9 @@ def redact_pdf_bytes(
     automatic detection keeps missing, say) where you'd rather guarantee removal than
     rely on the model. Exemptions win if a term appears in both lists."""
     analyzer = get_analyzer()
-    exempt_normalized = _expand_exemptions(exemptions)
+    exempt_pattern = _build_exemption_pattern(exemptions)
     must_redact = [
-        m.strip()
-        for m in (must_redact or [])
-        if m.strip() and _normalize_for_match(m) not in exempt_normalized
+        m.strip() for m in (must_redact or []) if m.strip() and not _is_exempt(m, exempt_pattern)
     ]
 
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
@@ -130,7 +142,7 @@ def redact_pdf_bytes(
                 if result.entity_type in EXCLUDED_ENTITIES or result.score < SCORE_THRESHOLD:
                     continue
                 snippet = line[result.start : result.end].strip()
-                if not snippet or _normalize_for_match(snippet) in exempt_normalized:
+                if not snippet or _is_exempt(snippet, exempt_pattern):
                     continue
                 rects.extend(page.search_for(snippet))
 

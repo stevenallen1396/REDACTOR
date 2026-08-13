@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import html
 import re
 import tempfile
@@ -12,6 +13,7 @@ from pathlib import Path
 
 import extract_msg
 from weasyprint import HTML
+from weasyprint.urls import default_url_fetcher
 
 # Outlook/Word HTML encodes list bullets and dingbats as Private-Use-Area codepoints
 # that only render correctly through the Windows-specific Wingdings/Symbol/Webdings
@@ -69,12 +71,38 @@ class ParsedEmail:
     body: str = ""
     is_html: bool = False
     attachments: list[str] = field(default_factory=list)
+    # cid -> data: URI. HTML emails reference inline images (logos, signature
+    # graphics) via "cid:xxx", which points at another part of the same message,
+    # not a URL - our WeasyPrint url_fetcher blocks all real network fetches (to
+    # stop tracking pixels phoning home), which was also silently breaking these
+    # legitimate inline images. Resolving them to data: URIs up front sidesteps
+    # the fetcher entirely.
+    inline_images: dict[str, str] = field(default_factory=dict)
+
+
+_CID_REF = re.compile(r'(src|background)=(["\'])cid:([^"\']+)\2', re.IGNORECASE)
+
+
+def _inline_cid_images(html_body: str, inline_images: dict[str, str]) -> str:
+    def replace(match: "re.Match[str]") -> str:
+        attr, quote, cid = match.group(1), match.group(2), match.group(3)
+        data_uri = inline_images.get(cid.strip("<>"))
+        if data_uri is None:
+            return match.group(0)
+        return f"{attr}={quote}{data_uri}{quote}"
+
+    return _CID_REF.sub(replace, html_body)
 
 
 def _blocked_url_fetcher(url, timeout=10, ssl_context=None):
-    # Email HTML can embed remote tracking pixels / images. Refuse all remote
+    # Email HTML can embed remote tracking pixels / images. Refuse all *remote*
     # fetches so converting an email never phones home - WeasyPrint just drops
-    # the resource and continues rendering the rest of the page.
+    # the resource and continues rendering the rest of the page. data: URIs are
+    # self-contained (used for inline cid: images we've already resolved locally
+    # in _inline_cid_images) and never touch the network, so let those through -
+    # WeasyPrint's default fetcher just decodes them in-process.
+    if url.startswith("data:"):
+        return default_url_fetcher(url)
     raise ValueError(f"remote fetch blocked: {url}")
 
 
@@ -95,6 +123,21 @@ def _parse_eml(data: bytes) -> ParsedEmail:
         if part.get_filename()
     ]
 
+    inline_images = {}
+    for part in msg.walk():
+        content_id = part.get("Content-ID")
+        if not content_id or not part.get_content_type().startswith("image/"):
+            continue
+        try:
+            payload = part.get_content()
+        except Exception:
+            continue
+        if not isinstance(payload, bytes):
+            continue
+        cid = content_id.strip().strip("<>")
+        b64 = base64.b64encode(payload).decode("ascii")
+        inline_images[cid] = f"data:{part.get_content_type()};base64,{b64}"
+
     return ParsedEmail(
         subject=msg.get("subject", "(no subject)"),
         sender=msg.get("from", ""),
@@ -103,6 +146,7 @@ def _parse_eml(data: bytes) -> ParsedEmail:
         body=body,
         is_html=is_html,
         attachments=attachments,
+        inline_images=inline_images,
     )
 
 
@@ -128,6 +172,17 @@ def _parse_msg(data: bytes) -> ParsedEmail:
                 for att in msg.attachments
             ]
 
+            inline_images = {}
+            for att in msg.attachments:
+                cid = getattr(att, "cid", None)
+                if not cid:
+                    continue
+                mimetype = getattr(att, "mimetype", None) or "application/octet-stream"
+                if not mimetype.startswith("image/"):
+                    continue
+                b64 = base64.b64encode(att.data).decode("ascii")
+                inline_images[cid.strip("<>")] = f"data:{mimetype};base64,{b64}"
+
             return ParsedEmail(
                 subject=msg.subject or "(no subject)",
                 sender=msg.sender or "",
@@ -136,6 +191,7 @@ def _parse_msg(data: bytes) -> ParsedEmail:
                 body=body,
                 is_html=is_html,
                 attachments=attachments,
+                inline_images=inline_images,
             )
         finally:
             msg.close()
@@ -146,6 +202,8 @@ def _parse_msg(data: bytes) -> ParsedEmail:
 def _render_html(parsed: ParsedEmail) -> str:
     body = _fix_symbol_font_glyphs(parsed.body)
     if parsed.is_html:
+        if parsed.inline_images:
+            body = _inline_cid_images(body, parsed.inline_images)
         body_html = f'<div class="html-body">{body}</div>'
     else:
         body_html = f'<div class="plain-body">{html.escape(body)}</div>'

@@ -26,6 +26,19 @@ SPACY_MODEL = os.environ.get("SPACY_MODEL", "en_core_web_lg")
 EXCLUDED_ENTITIES = {"DATE_TIME", "URL"}
 SCORE_THRESHOLD = 0.4
 
+# Always exempt, on top of whatever's typed into the Exemptions box each time - staff
+# names and business details that should never be redacted regardless of who's running
+# a batch. Edit this list directly to add/remove entries.
+DEFAULT_EXEMPTIONS = [
+    "Declan Mallon",
+    "Dean Murray",
+    "Matthew Westman",
+    "7 Baldwin Place",
+    "OX15 5BF",
+    "Corylus",
+    "Severn Trent",
+]
+
 _analyzer: Optional[AnalyzerEngine] = None
 
 
@@ -115,7 +128,7 @@ def redact_pdf_bytes(
     automatic detection keeps missing, say) where you'd rather guarantee removal than
     rely on the model. Exemptions win if a term appears in both lists."""
     analyzer = get_analyzer()
-    exempt_pattern = _build_exemption_pattern(exemptions)
+    exempt_pattern = _build_exemption_pattern(list(exemptions) + DEFAULT_EXEMPTIONS)
     must_redact = [
         m.strip() for m in (must_redact or []) if m.strip() and not _is_exempt(m, exempt_pattern)
     ]

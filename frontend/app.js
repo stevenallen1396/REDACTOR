@@ -150,6 +150,7 @@ const batchInput = document.getElementById("batch-input");
 const batchFolderInput = document.getElementById("batch-folder-input");
 const batchFileList = document.getElementById("batch-file-list");
 const exemptionsEl = document.getElementById("exemptions");
+const mustRedactEl = document.getElementById("must-redact");
 const processBtn = document.getElementById("process-btn");
 const clearBtn = document.getElementById("clear-btn");
 const batchStatus = document.getElementById("batch-status");
@@ -187,6 +188,7 @@ processBtn.addEventListener("click", async () => {
   const form = new FormData();
   for (const [key, f] of batchFiles.entries()) form.append("files", f, key);
   form.append("exemptions", exemptionsEl.value);
+  form.append("must_redact", mustRedactEl.value);
 
   try {
     const res = await fetch("/api/process", { method: "POST", body: form });

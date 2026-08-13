@@ -49,10 +49,22 @@ def parse_exemptions(raw: str) -> list[str]:
     return [line.strip() for line in raw.splitlines() if line.strip()]
 
 
-def redact_pdf_bytes(pdf_bytes: bytes, exemptions: list[str]) -> bytes:
+def redact_pdf_bytes(
+    pdf_bytes: bytes,
+    exemptions: list[str],
+    must_redact: list[str] | None = None,
+) -> bytes:
     """Return a copy of the given PDF with detected personal information permanently
-    removed (not just visually covered)."""
+    removed (not just visually covered). `must_redact` is a manual safety-net list -
+    exact terms that get blacked out unconditionally, for cases (a specific name that
+    automatic detection keeps missing, say) where you'd rather guarantee removal than
+    rely on the model. Exemptions win if a term appears in both lists."""
     analyzer = get_analyzer()
+    exempt_lower = {e.strip().lower() for e in exemptions}
+    must_redact = [
+        m.strip() for m in (must_redact or []) if m.strip() and m.strip().lower() not in exempt_lower
+    ]
+
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
 
     for page in doc:
@@ -60,12 +72,13 @@ def redact_pdf_bytes(pdf_bytes: bytes, exemptions: list[str]) -> bytes:
         if not page_text.strip():
             continue
 
+        rects: list[fitz.Rect] = []
+
         # Analyze line-by-line rather than the whole page as one blob: spaCy's NER
         # will otherwise happily merge an entity across a line break (e.g. a name
         # bleeding into the next line's label text), which both mis-detects PII and
         # breaks exact-match exemptions since the "entity" text no longer matches
         # what the user typed in the exemptions box.
-        rects: list[fitz.Rect] = []
         for line in page_text.split("\n"):
             if not line.strip():
                 continue
@@ -80,6 +93,9 @@ def redact_pdf_bytes(pdf_bytes: bytes, exemptions: list[str]) -> bytes:
                 snippet = line[result.start : result.end].strip()
                 if snippet:
                     rects.extend(page.search_for(snippet))
+
+        for term in must_redact:
+            rects.extend(page.search_for(term))
 
         if rects:
             for rect in rects:

@@ -3,6 +3,7 @@
 A tool that:
 1. Takes a batch of documents — PDFs, `.eml` / `.msg` emails, or a folder mixing both — and produces the same batch back with all personal information permanently redacted. Emails are converted to PDF automatically before redaction, so you can just drop a folder in and get redacted PDFs out.
 2. Lets you list **exemptions**: terms (staff names, your own company name, etc.) that should never be redacted even though they look like PII.
+3. Lets you list terms to **always redact**: a manual safety net for a specific name/term automatic detection has missed before — guaranteed removal regardless of what the model does.
 
 Runs entirely locally by default: no documents, emails, or text are ever sent anywhere, no API key, no subscription. It can optionally be deployed online for a small team to share (see **Hosting it online** below) — that's a deliberate, explicit opt-in, not the default.
 
@@ -16,22 +17,23 @@ First run installs everything into a local virtual environment (a few minutes, o
 
 ## Using it
 
-Drop PDFs, `.eml`/`.msg` files, or a whole folder mixing both onto the page (or use "choose files" / "choose a folder"). List any exemptions, one per line, then click **Redact & download ZIP**. Any email files in the batch are converted to PDF first; every PDF — original or converted — is then redacted, and the whole batch comes back as one ZIP, mirroring the folder structure you dropped in.
+Drop PDFs, `.eml`/`.msg` files, or a whole folder mixing both onto the page (or use "choose files" / "choose a folder"). List any exemptions and any always-redact terms, one per line each, then click **Redact & download ZIP**. Any email files in the batch are converted to PDF first; every PDF — original or converted — is then redacted, and the whole batch comes back as one ZIP, mirroring the folder structure you dropped in.
 
 ## How redaction works
 
-- Text is extracted from each PDF page and scanned with [Microsoft Presidio](https://microsoft.github.io/presidio/) (local NER + pattern matching) for names, email addresses, phone numbers, addresses, IBANs, credit card numbers, plus custom UK-specific detectors for postcodes, National Insurance numbers, and UK mobile numbers.
+- Text is extracted from each PDF page and scanned with [Microsoft Presidio](https://microsoft.github.io/presidio/) (local NER + pattern matching) for names, email addresses, phone numbers, addresses, IBANs, credit card numbers, plus custom detectors added in `backend/app/pii_recognizers.py`: UK postcodes, National Insurance numbers, UK mobile numbers, honorific-prefixed names ("Mr Thompson", "Dr Alam" — catches names the statistical model misses, especially on the lighter hosted model), and a curated job-title word list (Managing Director, Sales Executive, etc. — necessarily incomplete, extend the list there as needed).
 - Matches are **physically removed** from the PDF via PyMuPDF's redaction annotations (`apply_redactions`) — this strips the underlying content, not just draws a black box on top, so it can't be recovered by copy-paste or re-extracting the text.
 - Anything you list in the **Exemptions** box (one term per line) is left untouched, even if it looks like PII.
+- Anything you list in the **Always redact** box is guaranteed removed regardless of what the model detects — the manual safety net for a name that's slipped through before. If a term appears in both boxes, the exemption wins.
 - By default, generic dates (`DATE_TIME`) and URLs aren't redacted, since Presidio flags every date-shaped string with no way to tell an invoice date from a birth date — for ordinary business documents that would over-redact far more than intended. If your documents contain sensitive dates (e.g. dates of birth) you want caught automatically, remove `"DATE_TIME"` from `EXCLUDED_ENTITIES` in `backend/app/redact.py`.
 - Outlook/Word HTML emails often encode bullet points as private-use Unicode characters tied to the Wingdings/Symbol font. `email_to_pdf.py` detects and remaps the common ones so they render as real bullets instead of a "missing glyph" box — see `_fix_symbol_font_glyphs`.
 
-**Always spot-check the output before sending redacted documents onward.** Automatic PII detection is not perfect — review a sample from each batch.
+**Always spot-check the output before sending redacted documents onward.** Automatic PII detection is not perfect — no NER model catches every name (a bare surname with no title or context, e.g., is a genuinely hard case for any of them) — review a sample from each batch, and add anything that slips through to the Always-redact box for next time.
 
 ## Limits
 
-- Max 100 files per batch, max 30MB per file (see `MAX_FILES` / `MAX_FILE_SIZE` in `backend/app/main.py` — just constants, change them if you need more).
-- Processing is synchronous (roughly 1–3 seconds per page), so very large batches will take a few minutes.
+- Max 100 files per batch (see `MAX_FILES` in `backend/app/main.py` — just a constant, change it if you need more). No per-file size cap.
+- Processing is synchronous (roughly 1–3 seconds per page), so very large batches — or very large individual files — will take a while and use proportionally more memory. Locally that's bounded only by your machine; if hosted on Render's free/Starter tier (512MB RAM), a very large file risks running the container out of memory mid-request (see **Hosting it online** below).
 
 ## Project structure
 
@@ -63,5 +65,6 @@ By default the app only listens on `127.0.0.1`, so nothing but your own machine 
 
 **Trade-offs of the free tier, worth knowing going in:**
 - It spins down after 15 minutes idle; the next request wakes it up with a ~30–60 second cold start.
-- It uses `en_core_web_sm` rather than `en_core_web_lg` to fit the RAM budget — noticeably lower accuracy for name/location detection than the local setup. Spot-checking output matters even more here.
+- It uses `en_core_web_sm` rather than `en_core_web_lg` to fit the RAM budget — noticeably lower accuracy for name/location detection than the local setup. Spot-checking output matters even more here, and the honorific/job-title recognizers and the Always-redact box both help close that gap.
 - No per-user activity log or rate-limiting beyond what's built in — fine for a small trusted team, not a substitute for a real access-control system if that's ever needed.
+- No per-file size limit is enforced by the app anymore, but Render's Free and Starter plans both cap the container at **512MB RAM** — a large enough file (very many pages, or a heavily scanned/image-based PDF) can still run it out of memory mid-request and fail. Render's Standard plan (**2GB RAM**) removes that ceiling with real headroom to spare, and would also comfortably fit `en_core_web_lg` for better accuracy — see [render.com/pricing](https://render.com/pricing) for current cost. Render doesn't publish a separate request-body-size or request-timeout limit, so RAM is the practical constraint either way.
